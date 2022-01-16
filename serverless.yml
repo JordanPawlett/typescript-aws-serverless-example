@@ -1,0 +1,199 @@
+org: jordanpawlett
+app: aws-node-typescript-http-api
+service: hello-service
+frameworkVersion: "2 || 3"
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline-sns
+  - serverless-offline-sqs
+  - serverless-offline
+
+custom:
+  # Our stage is based on what is passed in when running serverless
+  # commands. Or fallsback to what we have set in the provider section.
+  stage: ${opt:stage, self:provider.stage}
+  # cloud formation intrinstic function to get ARN of topic.
+  topicArn:
+    Fn::Join:
+      - ""
+      - - "arn:aws:sns:"
+        - Ref: AWS::Region
+        - ":"
+        - Ref: AWS::AccountId
+        - ":"
+        - Fn::GetAtt:
+            - mySnsTopic
+            - TopicName
+  serverless-offline-sns:
+    port: 4002
+    debug: false
+
+  serverless-offline-sqs:
+    autoCreate: true
+    apiVersion: "2012-11-05"
+    endpoint: http://0.0.0.0:9324
+    region: eu-west-1
+    skipCacheInvalidation: false
+
+provider:
+  name: aws
+  stage: dev
+  region: eu-west-1
+  runtime: nodejs14.x
+  lambdaHashingVersion: "20201221"
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action:
+        - "sns:Publish"
+      Resource: !GetAtt
+        - mySnsTopic
+        - Arn
+    - Effect: Allow
+      Action:
+        - SQS:SendMessage
+        - SQS:DeleteMessage
+        - SQS:ReceiveMessage
+        - SQS:GetQueueUrl
+        - SQS:ListQueues
+      Resource: "*"
+    - Effect: Allow
+      Action:
+        - lambda:InvokeFunction
+        - lambda:InvokeAsync
+      Resource: "*"
+
+functions:
+  hello:
+    handler: src/producer.handler
+    events:
+      - httpApi:
+          path: /
+          method: get
+    environment:
+      TOPIC_ARN: ${self:custom.topicArn}
+
+  consumer:
+    handler: src/consumer.handler
+    events:
+      - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-firstQueue
+      - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-secondQueue
+
+
+  # send messages from sns -> sqs in offline mode.
+  # enqueuer:
+  #   handler: src/enqueuer.handler
+  #   events:
+  #     - sns: ${self:service}-${self:provider.stage}-my-sns-topic
+  #   environment:
+  #     QUEUE_URL: http://localhost:9324/queue/hello-service-dev-firstQueue
+
+  # enqueuer-2:
+  #   handler: src/enqueuer.handler
+  #   events:
+  #     - sns: ${self:service}-${self:provider.stage}-my-sns-topic
+  #   environment:
+  #     QUEUE_URL: http://localhost:9324/queue/hello-service-dev-secondQueue
+
+resources:
+  Resources:
+    mySnsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: ${self:service}-${self:provider.stage}-my-sns-topic
+
+    # Create our 'fistQueue' SQS queue
+    firstQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-first-queue
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt
+            - firstQueueDLQ
+            - Arn
+          maxReceiveCount: 3
+
+    # Create our 'firstQueue' Dead Letter Queue SQS queue
+    firstQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-first-queue-dlq
+
+    # Create our queue policy for the 'firstQueue'
+    snsToFirstQueueSqsPolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: Allow
+              Principal: "*"
+              Resource: !GetAtt
+                - firstQueue
+                - Arn
+              Action: "SQS:SendMessage"
+              Condition:
+                ArnEquals:
+                  "aws:SourceArn": !Ref mySnsTopic
+        Queues:
+          - Ref: firstQueue
+
+    # Create our 'secondQueue' SQS queue
+    secondQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-second-queue
+        RedrivePolicy:
+          deadLetterTargetArn: !GetAtt
+            - secondQueueDLQ
+            - Arn
+          maxReceiveCount: 3
+
+    # Create our 'secondQueue' Dead Letter Queue SQS queue
+    secondQueueDLQ:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${self:service}-${self:provider.stage}-second-queue-dlq
+
+    # Create our queue policy for the 'secondQueue'
+    snsToSecondQueueSqsPolicy:
+      Type: AWS::SQS::QueuePolicy
+      Properties:
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Sid: "allow-sns-messages"
+              Effect: Allow
+              Principal: "*"
+              Resource: !GetAtt
+                - secondQueue
+                - Arn
+              Action: "SQS:SendMessage"
+              Condition:
+                ArnEquals:
+                  "aws:SourceArn": !Ref mySnsTopic
+        Queues:
+          - Ref: secondQueue
+
+    # Create the subscription to the 'firstQueue'
+    firstQueueSubscription:
+      Type: "AWS::SNS::Subscription"
+      Properties:
+        TopicArn: !Ref mySnsTopic
+        Endpoint: !GetAtt
+          - firstQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: "true"
+
+    # Create the subscription to the 'secondQueue'
+    secondQueueSubscription:
+      Type: "AWS::SNS::Subscription"
+      Properties:
+        TopicArn: !Ref mySnsTopic
+        Endpoint: !GetAtt
+          - secondQueue
+          - Arn
+        Protocol: sqs
+        RawMessageDelivery: "true"
