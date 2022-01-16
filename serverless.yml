@@ -46,9 +46,7 @@ provider:
     - Effect: "Allow"
       Action:
         - "sns:Publish"
-      Resource: !GetAtt
-        - mySnsTopic
-        - Arn
+      Resource: ${self:custom.topicArn}
     - Effect: Allow
       Action:
         - SQS:SendMessage
@@ -76,9 +74,18 @@ functions:
   consumer:
     handler: src/consumer.handler
     events:
-      - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-firstQueue
-      - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-secondQueue
-
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - firstQueue
+              - Arn
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - secondQueue
+              - Arn
+  #     - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-firstQueue
+  #     - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-secondQueue
 
   # send messages from sns -> sqs in offline mode.
   # enqueuer:
