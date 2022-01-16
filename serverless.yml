@@ -12,7 +12,7 @@ plugins:
 custom:
   # Our stage is based on what is passed in when running serverless
   # commands. Or fallsback to what we have set in the provider section.
-  stage: ${opt:stage, self:provider.stage}
+  stage: ${opt:stage, self:custom.stage}
   # cloud formation intrinstic function to get ARN of topic.
   topicArn:
     Fn::Join:
@@ -84,21 +84,21 @@ functions:
             Fn::GetAtt:
               - secondQueue
               - Arn
-  #     - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-firstQueue
-  #     - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:provider.stage}-secondQueue
+  #     - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:custom.stage}-firstQueue
+  #     - sqs: arn:aws:sqs:${aws:region}:${aws:accountId}:${self:service}-${opt:stage, self:custom.stage}-secondQueue
 
   # send messages from sns -> sqs in offline mode.
   # enqueuer:
   #   handler: src/enqueuer.handler
   #   events:
-  #     - sns: ${self:service}-${self:provider.stage}-my-sns-topic
+  #     - sns: ${self:service}-${self:custom.stage}-my-sns-topic
   #   environment:
   #     QUEUE_URL: http://localhost:9324/queue/hello-service-dev-firstQueue
 
   # enqueuer-2:
   #   handler: src/enqueuer.handler
   #   events:
-  #     - sns: ${self:service}-${self:provider.stage}-my-sns-topic
+  #     - sns: ${self:service}-${self:custom.stage}-my-sns-topic
   #   environment:
   #     QUEUE_URL: http://localhost:9324/queue/hello-service-dev-secondQueue
 
@@ -107,13 +107,13 @@ resources:
     mySnsTopic:
       Type: AWS::SNS::Topic
       Properties:
-        TopicName: ${self:service}-${self:provider.stage}-my-sns-topic
+        TopicName: ${self:service}-${self:custom.stage}-my-sns-topic
 
     # Create our 'fistQueue' SQS queue
     firstQueue:
       Type: "AWS::SQS::Queue"
       Properties:
-        QueueName: ${self:service}-${self:provider.stage}-first-queue
+        QueueName: ${self:service}-${self:custom.stage}-first-queue
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt
             - firstQueueDLQ
@@ -124,7 +124,7 @@ resources:
     firstQueueDLQ:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: ${self:service}-${self:provider.stage}-first-queue-dlq
+        QueueName: ${self:service}-${self:custom.stage}-first-queue-dlq
 
     # Create our queue policy for the 'firstQueue'
     snsToFirstQueueSqsPolicy:
@@ -150,7 +150,7 @@ resources:
     secondQueue:
       Type: "AWS::SQS::Queue"
       Properties:
-        QueueName: ${self:service}-${self:provider.stage}-second-queue
+        QueueName: ${self:service}-${self:custom.stage}-second-queue
         RedrivePolicy:
           deadLetterTargetArn: !GetAtt
             - secondQueueDLQ
@@ -161,7 +161,7 @@ resources:
     secondQueueDLQ:
       Type: AWS::SQS::Queue
       Properties:
-        QueueName: ${self:service}-${self:provider.stage}-second-queue-dlq
+        QueueName: ${self:service}-${self:custom.stage}-second-queue-dlq
 
     # Create our queue policy for the 'secondQueue'
     snsToSecondQueueSqsPolicy:
