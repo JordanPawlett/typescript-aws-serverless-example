@@ -32,6 +32,9 @@ jobs:
           ${{ secrets.ENV }}
           EOF
 
+      - name: Install deploy-tool globally
+        run: yarn global add serverless
+
       - name: Deploy
         run: serverless deploy --stage dev
         env:
